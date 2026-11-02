@@ -5,7 +5,6 @@ import com.PassBanned.API.Model.BannedPassenger;
 import com.PassBanned.API.Model.User;
 import com.PassBanned.API.repository.BannedPassengerRepository;
 import com.PassBanned.API.repository.UserRepository;
-import com.PassBanned.API.service.MFAService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -26,39 +25,49 @@ public class DataInitializer implements CommandLineRunner {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
-    @Autowired
-    private MFAService mfaService;
-
     @Override
     public void run(String... args) throws Exception {
         // Create default users if they don't exist
-
-        // Admin user
         User admin = new User();
+        // Admin user (flyasky.com)
+        if (userRepository.findByEmail("eabi@flyasky.com").isEmpty()) {
             admin.setName("Administrateur Asky");
-            admin.setEmail("admin@asky.com");
+            admin.setEmail("eabi@flyasky.com");
             admin.setPassword(passwordEncoder.encode("admin123"));
             admin.setRole(User.Role.ADMIN);
             admin.setStatus(User.Status.ACTIVE);
             admin.setAvatarUrl("https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=1");
             admin.setLastLogin(LocalDateTime.now());
-            admin.setMfaEnabled(true);
-            admin.setMfaSecret(mfaService.generateSecret(admin));
             userRepository.save(admin);
+        }
 
-            // Regular user
+        // Regular user (flyasky.com)
+        if (userRepository.findByEmail("user@flyasky.com").isEmpty()) {
             User user = new User();
             user.setName("Utilisateur Asky");
-            user.setEmail("user@asky.com");
+            user.setEmail("user@flyasky.com");
             user.setPassword(passwordEncoder.encode("user123"));
             user.setRole(User.Role.USER);
             user.setStatus(User.Status.ACTIVE);
             user.setAvatarUrl("https://images.pexels.com/photos/3763188/pexels-photo-3763188.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=1");
             user.setLastLogin(LocalDateTime.now().minusDays(1));
             userRepository.save(user);
+        }
+
+        // Legacy admin@asky.com if missing
+        if (userRepository.findByEmail("admin@asky.com").isEmpty()) {
+            User legacyAdmin = new User();
+            legacyAdmin.setName("Administrateur Principal");
+            legacyAdmin.setEmail("admin@asky.com");
+            legacyAdmin.setPassword(passwordEncoder.encode("admin123"));
+            legacyAdmin.setRole(User.Role.ADMIN);
+            legacyAdmin.setStatus(User.Status.ACTIVE);
+            legacyAdmin.setLastLogin(LocalDateTime.now());
+            userRepository.save(legacyAdmin);
+        }
 
             // Create sample banned passengers
-            //createSamplePassengers(admin);
+            createSamplePassengers(admin);
 
     }
 

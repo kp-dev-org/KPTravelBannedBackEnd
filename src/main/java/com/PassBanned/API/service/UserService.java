@@ -29,6 +29,9 @@ public class UserService implements UserDetailsService {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private AuditLogService auditLogService;
+
 
 
 
@@ -117,6 +120,20 @@ public class UserService implements UserDetailsService {
         }
         user.setMfaConfigured(false);
         User savedUser = userRepository.save(user);
+
+        try {
+            auditLogService.record(
+                "USER_CREATED",
+                "USERS",
+                "Création du compte utilisateur: " + savedUser.getName() + " (" + savedUser.getEmail() + ") - Rôle: " + savedUser.getRole(),
+                null,
+                "User #" + savedUser.getId(),
+                "SUCCESS",
+                null,
+                "Rôle: " + savedUser.getRole() + ", Statut: " + savedUser.getStatus()
+            );
+        } catch (Exception ignored) {}
+
         return convertToDto(savedUser);
     }
 
@@ -146,14 +163,40 @@ public class UserService implements UserDetailsService {
         }
 
         User updatedUser = userRepository.save(user);
+
+        try {
+            auditLogService.record(
+                "USER_UPDATED",
+                "USERS",
+                "Modification du compte utilisateur: " + updatedUser.getName() + " (" + updatedUser.getEmail() + ")",
+                null,
+                "User #" + id,
+                "SUCCESS",
+                null,
+                "Rôle: " + updatedUser.getRole() + ", Statut: " + updatedUser.getStatus()
+            );
+        } catch (Exception ignored) {}
+
         return convertToDto(updatedUser);
     }
 
     public void deleteUser(Long id) {
-        if (!userRepository.existsById(id)) {
-            throw new RuntimeException("User not found");
-        }
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("User not found"));
         userRepository.deleteById(id);
+
+        try {
+            auditLogService.record(
+                "USER_DELETED",
+                "USERS",
+                "Suppression du compte utilisateur: " + user.getName() + " (" + user.getEmail() + ")",
+                null,
+                "User #" + id,
+                "WARNING",
+                null,
+                "Rôle: " + user.getRole()
+            );
+        } catch (Exception ignored) {}
     }
 
     public void updateLastLogin(String email) {

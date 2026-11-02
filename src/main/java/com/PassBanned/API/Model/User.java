@@ -74,6 +74,9 @@ public class User {
     @Column(name = "mfa_Secret")
     private String mfaSecret;
 
+    @Column(name = "flyasky_sub")
+    private String flyAskySub;
+
     // Constructors
     public User() {}
 

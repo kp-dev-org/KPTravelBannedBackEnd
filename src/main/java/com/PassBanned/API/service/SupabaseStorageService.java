@@ -107,6 +107,44 @@ public class SupabaseStorageService {
     }
 
 
+    public String uploadPassengerImage(MultipartFile file) throws IOException {
+        String fileExtension = getFileExtension(file.getOriginalFilename());
+        String uniqueId = UUID.randomUUID().toString();
+        String fileName = "passenger-" + uniqueId + "-" + System.currentTimeMillis() + "." + fileExtension;
+        String filePath = "passengers/" + fileName;
+
+        try {
+            ByteArrayResource fileResource = new ByteArrayResource(file.getBytes()) {
+                @Override
+                public String getFilename() {
+                    return fileName;
+                }
+            };
+
+            supabaseWebClient
+                    .post()
+                    .uri("/storage/v1/object/" + supabaseConfig.getBucketName() + "/" + filePath)
+                    .header(HttpHeaders.CONTENT_TYPE, file.getContentType())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + supabaseConfig.getSupabaseKey())
+                    .header("apikey", supabaseConfig.getSupabaseKey())
+                    .body(BodyInserters.fromResource(fileResource))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            return supabaseConfig.getSupabaseUrl() +
+                    "/storage/v1/object/public/" +
+                    supabaseConfig.getBucketName() + "/" +
+                    filePath;
+
+        } catch (WebClientResponseException e) {
+            throw new IOException("Erreur lors de l'upload vers Supabase: " +
+                    e.getRawStatusCode() + " " + e.getResponseBodyAsString(), e);
+        } catch (Exception e) {
+            throw new IOException("Erreur lors de upload: " + e.getMessage(), e);
+        }
+    }
+
     private String getFileExtension(String filename) {
         if (filename == null || filename.lastIndexOf('.') == -1) {
             return "jpg";

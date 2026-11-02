@@ -2,6 +2,7 @@ package com.PassBanned.API.security;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+import lombok.Getter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.util.Date;
+import java.util.UUID;
 
 @Component
 public class JwtTokenProvider {
@@ -16,44 +18,75 @@ public class JwtTokenProvider {
     @Value("${jwt.secret}")
     private String jwtSecret;
 
-
-    @Value("${jwt.expiration}")
+    @Getter
+    @Value("${jwt.expiration:900000}")
     private int jwtExpirationInMs;
 
     private SecretKey getSigningKey() {
-
         return Keys.hmacShaKeyFor(jwtSecret.getBytes());
     }
 
     public String generateToken(Authentication authentication) {
         UserDetails userPrincipal = (UserDetails) authentication.getPrincipal();
-        Date expiryDate = new Date(System.currentTimeMillis() + jwtExpirationInMs);
+        Date now = new Date();
+        Date expiryDate = new Date(now.getTime() + jwtExpirationInMs);
 
         return Jwts.builder()
+                .setId(UUID.randomUUID().toString())
                 .setSubject(userPrincipal.getUsername())
-                .setIssuedAt(new Date())
+                .setIssuedAt(now)
                 .setExpiration(expiryDate)
                 .signWith(getSigningKey())
                 .compact();
     }
 
     public String generateTokenFromUsername(String username) {
-        Date expiryDate = new Date(System.currentTimeMillis() + jwtExpirationInMs);
+        Date now = new Date();
+        Date expiryDate = new Date(now.getTime() + jwtExpirationInMs);
+
         return Jwts.builder()
+                .setId(UUID.randomUUID().toString())
                 .setSubject(username)
-                .setIssuedAt(new Date())
+                .setIssuedAt(now)
                 .setExpiration(expiryDate)
                 .signWith(getSigningKey())
                 .compact();
     }
+
     public String getUsernameFromToken(String token) {
-        Claims claims = Jwts.parserBuilder()
+        return getClaimsFromToken(token).getSubject();
+    }
+
+    public String getJtiFromToken(String token) {
+        try {
+            return getClaimsFromToken(token).getId();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public Date getExpirationDateFromToken(String token) {
+        try {
+            return getClaimsFromToken(token).getExpiration();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public Date getIssuedAtDateFromToken(String token) {
+        try {
+            return getClaimsFromToken(token).getIssuedAt();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public Claims getClaimsFromToken(String token) {
+        return Jwts.parserBuilder()
                 .setSigningKey(getSigningKey())
                 .build()
                 .parseClaimsJws(token)
                 .getBody();
-
-        return claims.getSubject();
     }
 
     public boolean validateToken(String authToken) {

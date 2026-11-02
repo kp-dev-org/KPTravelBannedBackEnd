@@ -4,6 +4,8 @@ package com.PassBanned.API.controller;
 import com.PassBanned.API.Model.BannedPassenger;
 import com.PassBanned.API.dto.BannedPassengerDto;
 import com.PassBanned.API.service.BannedPassengerService;
+import com.PassBanned.API.service.LocalFileStorageService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -14,9 +16,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/passengers")
@@ -24,6 +28,9 @@ public class BannedPassengerController {
 
     @Autowired
     private BannedPassengerService passengerService;
+
+    @Autowired
+    private LocalFileStorageService fileStorageService;
 
     @GetMapping
     public ResponseEntity<Page<BannedPassengerDto>> getAllPassengers(
@@ -137,5 +144,27 @@ public class BannedPassengerController {
             "criticalCases", passengerService.getCriticalCases()
         );
         return ResponseEntity.ok(stats);
+    }
+
+    @PostMapping("/image/upload")
+    public ResponseEntity<Map<String, String>> uploadPassengerImage(
+            @RequestParam("image") MultipartFile file,
+            HttpServletRequest request) {
+        try {
+            if (file.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Fichier vide"));
+            }
+            if (!Objects.requireNonNull(file.getContentType()).startsWith("image/")) {
+                return ResponseEntity.badRequest().body(Map.of("error", "Le fichier doit être une image"));
+            }
+            if (file.getSize() > 5 * 1024 * 1024) { // 5MB
+                return ResponseEntity.badRequest().body(Map.of("error", "Le fichier ne doit pas dépasser 5MB"));
+            }
+            String imageUrl = fileStorageService.storeFile(file, request);
+            return ResponseEntity.ok(Map.of("imageUrl", imageUrl, "url", imageUrl));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Erreur lors de l'upload: " + e.getMessage()));
+        }
     }
 }

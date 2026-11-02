@@ -38,15 +38,13 @@ public class BannedPassenger {
     @Column(name = "last_name", nullable = false)
     private String lastName;
 
-    @NotBlank
     @Email
     @Size(max = 100)
-    @Column(nullable = false)
+    @Column
     private String email;
 
-    @NotBlank
     @Size(max = 20)
-    @Column(nullable = false)
+    @Column
     private String phone;
 
     @NotBlank
@@ -85,6 +83,9 @@ public class BannedPassenger {
 
     @Column(columnDefinition = "TEXT")
     private String notes;
+
+    @Column(name = "image_url", length = 500)
+    private String imageUrl;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

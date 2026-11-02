@@ -20,12 +20,10 @@ public class BannedPassengerDto {
     @Size(max = 50)
     private String lastName;
     
-    @NotBlank
     @Email
     @Size(max = 100)
     private String email;
     
-    @NotBlank
     @Size(max = 20)
     private String phone;
     
@@ -52,6 +50,7 @@ public class BannedPassengerDto {
     private BannedPassenger.Severity severity;
     private String notes;
     private BannedPassenger.Status status;
+    private String imageUrl;
     private String createdByName;
     private String createdByEmail;
     private LocalDateTime createdAt;
@@ -105,6 +104,9 @@ public class BannedPassengerDto {
 
     public BannedPassenger.Status getStatus() { return status; }
     public void setStatus(BannedPassenger.Status status) { this.status = status; }
+
+    public String getImageUrl() { return imageUrl; }
+    public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
 
     public String getCreatedByName() { return createdByName; }
     public void setCreatedByName(String createdByName) { this.createdByName = createdByName; }

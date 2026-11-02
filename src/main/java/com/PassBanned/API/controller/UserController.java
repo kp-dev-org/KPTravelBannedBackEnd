@@ -6,8 +6,9 @@ import com.PassBanned.API.dto.CreateUserRequest;
 import com.PassBanned.API.dto.PasswordChangeRequest;
 import com.PassBanned.API.dto.UpdateUserRequest;
 import com.PassBanned.API.dto.UserDto;
-import com.PassBanned.API.service.SupabaseStorageService;
+import com.PassBanned.API.service.LocalFileStorageService;
 import com.PassBanned.API.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -29,7 +30,7 @@ public class UserController {
     private UserService userService;
 
     @Autowired
-    private SupabaseStorageService storageService;
+    private LocalFileStorageService fileStorageService;
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
@@ -87,7 +88,8 @@ public class UserController {
     @PostMapping("/{id}/avatar")
     public ResponseEntity<Map<String, String>> uploadAvatar(
             @PathVariable Long id, 
-            @RequestParam("avatar") MultipartFile file) {
+            @RequestParam("avatar") MultipartFile file,
+            HttpServletRequest request) {
         try {
             if (file.isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Fichier vide"));
@@ -104,15 +106,11 @@ public class UserController {
             UserDto user = userService.getUserById(id)
                     .orElseThrow(() -> new RuntimeException("Utilisateur non trouvé"));
 
-            if (user.getAvatarUrl() != null) {
-                storageService.deleteAvatar(user.getAvatarUrl());
-            }
-
-            String avatarUrl = storageService.uploadAvatar(file, id.toString());
+            String avatarUrl = fileStorageService.storeFile(file, request);
             user.setAvatarUrl(avatarUrl);
-            userService.updateUser(id, user,null);
+            userService.updateUser(id, user, null);
 
-            return ResponseEntity.ok(Map.of("avatarUrl", avatarUrl));
+            return ResponseEntity.ok(Map.of("avatarUrl", avatarUrl, "url", avatarUrl));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Erreur lors de l'upload: " + e.getMessage()));
@@ -121,7 +119,8 @@ public class UserController {
 
     @PostMapping("/avatar/upload")
     public ResponseEntity<Map<String, String>> uploadAvatarForNewUser(
-            @RequestParam("avatar") MultipartFile file) {
+            @RequestParam("avatar") MultipartFile file,
+            HttpServletRequest request) {
         try {
             if (file.isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "Fichier vide"));
@@ -134,9 +133,9 @@ public class UserController {
             if (file.getSize() > 5 * 1024 * 1024) { // 5MB
                 return ResponseEntity.badRequest().body(Map.of("error", "Le fichier ne doit pas dépasser 5MB"));
             }
-            String avatarUrl = storageService.uploadAvatarForNewUser(file);
+            String avatarUrl = fileStorageService.storeFile(file, request);
 
-            return ResponseEntity.ok(Map.of("avatarUrl", avatarUrl));
+            return ResponseEntity.ok(Map.of("avatarUrl", avatarUrl, "url", avatarUrl));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Erreur lors de l'upload: " + e.getMessage()));

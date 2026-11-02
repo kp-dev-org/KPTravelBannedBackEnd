@@ -26,6 +26,9 @@ public class BannedPassengerService {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private AuditLogService auditLogService;
+
     public List<BannedPassengerDto> getAllPassengers() {
         return passengerRepository.findAll().stream()
                 .map(this::convertToDto)
@@ -61,6 +64,20 @@ public class BannedPassengerService {
         BannedPassenger passenger = convertToEntity(passengerDto);
         passenger.setCreatedBy(createdBy);
         BannedPassenger savedPassenger = passengerRepository.save(passenger);
+
+        try {
+            auditLogService.record(
+                "PASSENGER_CREATED",
+                "PASSENGERS",
+                "Enregistrement d'un passager interdit: " + savedPassenger.getFirstName() + " " + savedPassenger.getLastName() + " (Passeport: " + savedPassenger.getPassportNumber() + ")",
+                createdByEmail,
+                "Passenger #" + savedPassenger.getId(),
+                "SUCCESS",
+                null,
+                "Gravité: " + savedPassenger.getSeverity() + ", Motif: " + savedPassenger.getBanReason()
+            );
+        } catch (Exception ignored) {}
+
         return convertToDto(savedPassenger);
     }
 
@@ -73,14 +90,40 @@ public class BannedPassengerService {
         }
         updateEntityFromDto(passenger, passengerDto);
         BannedPassenger updatedPassenger = passengerRepository.save(passenger);
+
+        try {
+            auditLogService.record(
+                "PASSENGER_UPDATED",
+                "PASSENGERS",
+                "Mise à jour du passager interdit: " + updatedPassenger.getFirstName() + " " + updatedPassenger.getLastName() + " (Passeport: " + updatedPassenger.getPassportNumber() + ")",
+                null,
+                "Passenger #" + id,
+                "SUCCESS",
+                null,
+                "Statut: " + updatedPassenger.getStatus() + ", Gravité: " + updatedPassenger.getSeverity()
+            );
+        } catch (Exception ignored) {}
+
         return convertToDto(updatedPassenger);
     }
 
     public void deletePassenger(Long id) {
-        if (!passengerRepository.existsById(id)) {
-            throw new RuntimeException("Passenger not found");
-        }
+        BannedPassenger passenger = passengerRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Passenger not found"));
         passengerRepository.deleteById(id);
+
+        try {
+            auditLogService.record(
+                "PASSENGER_DELETED",
+                "PASSENGERS",
+                "Suppression de la fiche d'interdiction: " + passenger.getFirstName() + " " + passenger.getLastName() + " (Passeport: " + passenger.getPassportNumber() + ")",
+                null,
+                "Passenger #" + id,
+                "WARNING",
+                null,
+                "Passeport: " + passenger.getPassportNumber()
+            );
+        } catch (Exception ignored) {}
     }
 
     public Page<BannedPassengerDto> searchPassengers(String query, Pageable pageable) {
@@ -135,6 +178,7 @@ public class BannedPassengerService {
         dto.setSeverity(passenger.getSeverity());
         dto.setNotes(passenger.getNotes());
         dto.setStatus(passenger.getStatus());
+        dto.setImageUrl(passenger.getImageUrl());
         dto.setCreatedByName(passenger.getCreatedBy().getName());   // Infos du créateur
         dto.setCreatedByEmail(passenger.getCreatedBy().getEmail());
         dto.setCreatedAt(passenger.getCreatedAt());
@@ -163,5 +207,6 @@ public class BannedPassengerService {
         passenger.setSeverity(dto.getSeverity());
         passenger.setNotes(dto.getNotes());
         passenger.setStatus(dto.getStatus());
+        passenger.setImageUrl(dto.getImageUrl());
     }
 }
