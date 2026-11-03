@@ -73,17 +73,3 @@ CREATE INDEX IF NOT EXISTS idx_audit_user_email ON audit_logs(user_email);
 CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_logs(action);
 CREATE INDEX IF NOT EXISTS idx_audit_category ON audit_logs(category);
 
--- 4. Initialisation du compte administrateur système initial (si non existant)
--- Mot de passe par défaut : admin123 (hachage BCrypt sécurisé)
-INSERT INTO users (name, email, password, role, status, mfa_enabled, mfa_configured, created_at)
-VALUES (
-    'Administrateur Sûreté',
-    'admin@flyasky.com',
-    '$2a$10$dXJ3SW6G7P50lGmMkkmwe.20cQQubK3.HZWzG3YB1tlRy.fqvM/BG',
-    'ADMIN',
-    'ACTIVE',
-    false,
-    false,
-    CURRENT_TIMESTAMP
-)
-ON CONFLICT (email) DO NOTHING;
