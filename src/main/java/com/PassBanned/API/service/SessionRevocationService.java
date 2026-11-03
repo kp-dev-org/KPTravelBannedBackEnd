@@ -20,6 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SessionRevocationService {
 
     private static final Logger logger = LoggerFactory.getLogger(SessionRevocationService.class);
+
     // Seuil de déconnexion automatique en cas d'inactivité : 20 minutes (1200 secondes)
     public static final long INACTIVITY_TIMEOUT_SECONDS = 20 * 60;
 
@@ -29,46 +30,109 @@ public class SessionRevocationService {
     // Horodatage d'invalidation globale de session par utilisateur (email -> timestamp de déconnexion)
     private final Map<String, Instant> userSessionInvalidationTime = new ConcurrentHashMap<>();
 
-    // Suivi de la dernière activité par session / JTI pour le délai d'inactivité de 15 minutes
+    // Suivi de la dernière activité par session / JTI pour le délai d'inactivité de 20 minutes
     private final Map<String, Instant> sessionLastActivity = new ConcurrentHashMap<>();
+
+    // Suivi de la dernière activité par utilisateur (email -> Instant) pour bloquer les renouvellements après 20 min
+    private final Map<String, Instant> userLastActivity = new ConcurrentHashMap<>();
+
     /**
-     * Enregistre le démarrage d'une session active.
+     * Enregistre le démarrage ou l'activité d'une session active.
      */
     public void registerSessionActivity(String sessionId) {
+        registerSessionActivity(sessionId, null);
+    }
+
+    public void registerSessionActivity(String sessionId, String userEmail) {
+        Instant now = Instant.now();
         if (sessionId != null && !sessionId.isBlank()) {
-            sessionLastActivity.put(sessionId, Instant.now());
+            sessionLastActivity.put(sessionId, now);
+        }
+        if (userEmail != null && !userEmail.isBlank()) {
+            userLastActivity.put(userEmail.trim().toLowerCase(), now);
         }
     }
 
     /**
-     * Vérifie si la session a dépassé 15 minutes d'inactivité.
-     * Si l'utilisateur est inactif depuis plus de 15 minutes, la session est automatiquement révoquée.
+     * Vérifie si un utilisateur ou une session a dépassé les 20 minutes d'inactivité.
+     */
+    public boolean isUserInactive(String userEmail, String sessionId) {
+        Instant now = Instant.now();
+        if (userEmail != null && !userEmail.isBlank()) {
+            Instant lastUser = userLastActivity.get(userEmail.trim().toLowerCase());
+            if (lastUser != null && Duration.between(lastUser, now).getSeconds() > INACTIVITY_TIMEOUT_SECONDS) {
+                return true;
+            }
+        }
+        if (sessionId != null && !sessionId.isBlank()) {
+            Instant lastSession = sessionLastActivity.get(sessionId);
+            if (lastSession != null && Duration.between(lastSession, now).getSeconds() > INACTIVITY_TIMEOUT_SECONDS) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Révoque explicitement une session suite à 20 minutes d'inactivité.
+     */
+    public void revokeSessionDueToInactivity(String userEmail, String token, String sessionId) {
+        Instant now = Instant.now();
+        if (userEmail != null && !userEmail.isBlank()) {
+            userSessionInvalidationTime.put(userEmail.trim().toLowerCase(), now);
+            userLastActivity.remove(userEmail.trim().toLowerCase());
+        }
+        if (sessionId != null && !sessionId.isBlank()) {
+            sessionLastActivity.remove(sessionId);
+            revokedTokens.put("jti:" + sessionId, now.plusSeconds(INACTIVITY_TIMEOUT_SECONDS));
+        }
+        if (token != null && !token.isBlank()) {
+            revokedTokens.put(token, now.plusSeconds(INACTIVITY_TIMEOUT_SECONDS));
+        }
+        logger.warn("Session révoquée avec succès pour cause d'inactivité (20 min) pour: {}", userEmail);
+    }
+
+    /**
+     * Vérifie si la session a dépassé 20 minutes d'inactivité.
+     * Si l'utilisateur est inactif depuis plus de 20 minutes, la session est automatiquement révoquée.
      * Si l'utilisateur est actif, l'horodatage d'activité est prolongé (sliding session).
      *
      * @return true si la session est expirée pour cause d'inactivité, false sinon.
      */
-
     public boolean checkAndUpdateInactivity(String sessionId, String token, Date issuedAt, String userEmail, Date expirationDate) {
-        if (sessionId == null || sessionId.isBlank()) {
-            return false;
+        Instant now = Instant.now();
+
+        // 1. Contrôle préalable par compte utilisateur
+        if (userEmail != null && !userEmail.isBlank()) {
+            Instant lastUser = userLastActivity.get(userEmail.trim().toLowerCase());
+            if (lastUser != null && Duration.between(lastUser, now).getSeconds() > INACTIVITY_TIMEOUT_SECONDS) {
+                logger.warn("Session révoquée automatiquement pour inactivité (> 20 min) pour l'utilisateur: {}", userEmail);
+                revokeSessionDueToInactivity(userEmail, token, sessionId);
+                return true;
+            }
+            userLastActivity.put(userEmail.trim().toLowerCase(), now);
         }
 
-        Instant now = Instant.now();
-        Instant lastActivity = sessionLastActivity.get(sessionId);
-        // Si aucun horodatage préalable, initialiser avec la date d'émission ou maintenant
-        if (lastActivity == null) {
-            lastActivity = (issuedAt != null) ? issuedAt.toInstant() : now;
+        // 2. Contrôle par sessionId / JTI
+        if (sessionId != null && !sessionId.isBlank()) {
+            Instant lastActivity = sessionLastActivity.get(sessionId);
+
+            // Si aucun horodatage préalable, initialiser avec la date d'émission ou maintenant
+            if (lastActivity == null) {
+                lastActivity = (issuedAt != null) ? issuedAt.toInstant() : now;
+                sessionLastActivity.put(sessionId, now);
+            }
+
+            long idleSeconds = Duration.between(lastActivity, now).getSeconds();
+            if (idleSeconds > INACTIVITY_TIMEOUT_SECONDS) {
+                logger.warn("Session révoquée automatiquement pour inactivité (> 20 min): utilisateur={}, JTI={}", userEmail, sessionId);
+                revokeSessionDueToInactivity(userEmail, token, sessionId);
+                return true;
+            }
+
             sessionLastActivity.put(sessionId, now);
         }
-        long idleSeconds = Duration.between(lastActivity, now).getSeconds();
-        if (idleSeconds > INACTIVITY_TIMEOUT_SECONDS) {
-            logger.warn("Session révoquée automatiquement pour inactivité (> 15 min): utilisateur={}, JTI={}", userEmail, sessionId);
-            revokeToken(token, sessionId, expirationDate, userEmail);
-            sessionLastActivity.remove(sessionId);
-            return true;
-        }
-        // L'utilisateur est actif: prolonger l'inactivité de 15 minutes
-        sessionLastActivity.put(sessionId, now);
+
         return false;
     }
 
@@ -88,8 +152,10 @@ public class SessionRevocationService {
             sessionLastActivity.remove(jti);
         }
         if (userEmail != null && !userEmail.isBlank()) {
-            userSessionInvalidationTime.put(userEmail, Instant.now());
+            userSessionInvalidationTime.put(userEmail.trim().toLowerCase(), Instant.now());
+            userLastActivity.remove(userEmail.trim().toLowerCase());
         }
+
         logger.info("Session révoquée avec succès pour: {}", userEmail != null ? userEmail : "anonyme");
     }
 

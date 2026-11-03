@@ -210,6 +210,7 @@ public class AuthController {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(createErrorResponse("Compte utilisateur inactif."));
             }
+
             // Sauvegarder l'identifiant FlyAsky (sub) dans l'utilisateur local si pas encore fait
             if (localUser.getFlyAskySub() == null || !localUser.getFlyAskySub().equals(claims.getSub())) {
                 localUser.setFlyAskySub(claims.getSub());
@@ -231,7 +232,7 @@ public class AuthController {
 
             String jti = claims.getSid() != null ? claims.getSid() : claims.getSub();
             if (jti != null) {
-                sessionRevocationService.registerSessionActivity(jti);
+                sessionRevocationService.registerSessionActivity(jti, localUser.getEmail());
             }
 
             // Audit log
@@ -243,7 +244,7 @@ public class AuthController {
                         localUser.getEmail(),
                         "Session",
                         "SUCCESS",
-                        request.getRemoteAddr(),
+                        null,
                         "Rôle local appliqué: " + localUser.getRole().name() + " | Sub FlyAsky: " + claims.getSub()
                 );
             } catch (Exception ignored) {}
@@ -312,6 +313,22 @@ public class AuthController {
             // Renouvellement du token : on effectue TOUJOURS GET /token auprès de FlyAsky
             String newJwt = flyAskyAuthService.exchangeSessionForJwt(sessionToken);
             FlyAskyClaims claims = flyAskyAuthService.parseAndVerifyJwt(newJwt);
+            String jti = claims.getSid() != null ? claims.getSid() : claims.getSub();
+
+            // SÉCURITÉ : Bloquer le renouvellement si la session est inactive (> 20 min) ou révoquée
+            if (sessionRevocationService.isRevoked(newJwt, jti, claims.getIssuedAt(), claims.getEmail())
+                    || sessionRevocationService.isUserInactive(claims.getEmail(), jti)) {
+                logger.warn("Refus de renouvellement de token : session inactive (> 20 min) ou révoquée pour {}", claims.getEmail());
+                sessionRevocationService.revokeSessionDueToInactivity(claims.getEmail(), newJwt, jti);
+                for (ResponseCookie c : clearAuthCookies(request)) {
+                    response.addHeader(HttpHeaders.SET_COOKIE, c.toString());
+                }
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "Session expirée pour cause d'inactivité. Veuillez vous reconnecter."));
+            }
+
+            // Mettre à jour l'horodatage d'activité
+            sessionRevocationService.registerSessionActivity(jti, claims.getEmail());
 
             long maxAgeSeconds = 10 * 60;
             ResponseCookie authCookie = createAuthCookie(newJwt, request, maxAgeSeconds);
@@ -328,6 +345,42 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "Session FlyAsky expirée ou révoquée. Veuillez vous reconnecter."));
         }
+    }
+
+    /**
+     * Invalidation immédiate sur inactivité de 20 minutes (destruction des cookies côté serveur).
+     */
+    @PostMapping("/expire-session")
+    public ResponseEntity<?> expireSession(
+            @RequestBody(required = false) Map<String, String> body,
+            HttpServletRequest request,
+            HttpServletResponse response,
+            Authentication authentication) {
+
+        String userEmail = authentication != null ? authentication.getName() : null;
+        if (body != null && StringUtils.hasText(body.get("email"))) {
+            userEmail = body.get("email");
+        }
+
+        String sessionToken = extractSessionTokenFromRequest(request, body);
+        if (StringUtils.hasText(sessionToken)) {
+            try {
+                flyAskyAuthService.signOut(sessionToken);
+            } catch (Exception ignored) {}
+        }
+
+        String token = extractTokenFromRequest(request);
+        if (userEmail != null) {
+            sessionRevocationService.revokeSessionDueToInactivity(userEmail, token, null);
+        }
+
+        for (ResponseCookie c : clearAuthCookies(request)) {
+            response.addHeader(HttpHeaders.SET_COOKIE, c.toString());
+        }
+
+        SecurityContextHolder.clearContext();
+        logger.warn("Session expirée pour inactivité (20 min) et cookies invalidés pour {}", userEmail);
+        return ResponseEntity.ok(Map.of("message", "Session expirée pour inactivité et invalidée"));
     }
 
     /**
@@ -366,14 +419,17 @@ public class AuthController {
         if (StringUtils.hasText(sessionToken)) {
             flyAskyAuthService.signOut(sessionToken);
         }
+
         String token = extractTokenFromRequest(request);
         if (StringUtils.hasText(token)) {
             String userEmail = authentication != null ? authentication.getName() : null;
             sessionRevocationService.revokeToken(token, null, null, userEmail);
         }
+
         for (ResponseCookie c : clearAuthCookies(request)) {
             response.addHeader(HttpHeaders.SET_COOKIE, c.toString());
         }
+
         SecurityContextHolder.clearContext();
         return ResponseEntity.ok(Map.of("message", "Déconnexion et fermeture de la session FlyAsky réussies"));
     }

@@ -54,10 +54,8 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .authorizeHttpRequests(auths -> auths
-
                         // Autoriser les requêtes préliminaires CORS
                         .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
-
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/h2-console/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
@@ -70,7 +68,7 @@ public class SecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .headers(headers ->
-                        headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable)
+                        headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::deny)
                 )
                 .addFilterBefore(
                         jwtAuthenticationFilter,
@@ -89,7 +87,7 @@ public class SecurityConfig {
                 .toList();
         configuration.setAllowedOrigins(origins);
         configuration.setAllowedMethods(
-                List.of("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
         );
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
