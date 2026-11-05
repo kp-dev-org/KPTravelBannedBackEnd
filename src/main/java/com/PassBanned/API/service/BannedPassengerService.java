@@ -169,6 +169,8 @@ public class BannedPassengerService {
         dto.setEmail(passenger.getEmail());
         dto.setPhone(passenger.getPhone());
         dto.setPassportNumber(passenger.getPassportNumber());
+        dto.setPassportExpiryDate(passenger.getPassportExpiryDate());
+        dto.setPassportIssuingCountry(passenger.getPassportIssuingCountry());
         dto.setNationality(passenger.getNationality());
         dto.setDateOfBirth(passenger.getDateOfBirth());
         dto.setBanReason(passenger.getBanReason());
@@ -198,6 +200,8 @@ public class BannedPassengerService {
         passenger.setEmail(dto.getEmail());
         passenger.setPhone(dto.getPhone());
         passenger.setPassportNumber(dto.getPassportNumber());
+        passenger.setPassportExpiryDate(dto.getPassportExpiryDate());
+        passenger.setPassportIssuingCountry(dto.getPassportIssuingCountry());
         passenger.setNationality(dto.getNationality());
         passenger.setDateOfBirth(dto.getDateOfBirth());
         passenger.setBanReason(dto.getBanReason());

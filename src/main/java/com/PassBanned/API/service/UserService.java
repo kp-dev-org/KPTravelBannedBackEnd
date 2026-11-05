@@ -5,8 +5,6 @@ import com.PassBanned.API.Model.User;
 import com.PassBanned.API.config.SecurityConfig;
 import com.PassBanned.API.dto.UserDto;
 import com.PassBanned.API.repository.UserRepository;
-import com.warrenstrange.googleauth.GoogleAuthenticator;
-import com.warrenstrange.googleauth.GoogleAuthenticatorKey;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -35,21 +33,13 @@ public class UserService implements UserDetailsService {
 
 
 
-    private final GoogleAuthenticator gAuth = new GoogleAuthenticator();
-
     public String enableMfa(Long userId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        GoogleAuthenticatorKey key = gAuth.createCredentials();
-        user.setMfaSecret(key.getKey());
         user.setMfaEnabled(true);
+        user.setMfaConfigured(true);
         userRepository.save(user);
-
-        String otpAuthURL;
-
-        otpAuthURL = String.format("otpauth://totp/PassBanned:%s?secret=%s&issuer=PassBanned", user.getEmail(), key.getKey()
-        );
-        return otpAuthURL;
+        return "ok";
     }
 
     public void disableMfa(Long userId) {
@@ -64,9 +54,8 @@ public class UserService implements UserDetailsService {
     public void resetMfa(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
-        GoogleAuthenticatorKey key = gAuth.createCredentials();
-        user.setMfaSecret(key.getKey());
         user.setMfaConfigured(false);
+        user.setMfaSecret(null);
         userRepository.save(user);
     }
 
@@ -74,11 +63,17 @@ public class UserService implements UserDetailsService {
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + email));
-        // On retourne un objet UserDetails que Spring Security peut utiliser pour l'authentification
+        
+        List<org.springframework.security.core.GrantedAuthority> authorities = new java.util.ArrayList<>();
+        authorities.add(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_" + user.getRole().name()));
+        if (user.getRole() == User.Role.SUPER_ADMIN) {
+            authorities.add(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN"));
+        }
+
         return org.springframework.security.core.userdetails.User.builder()
                 .username(user.getEmail())
                 .password(user.getPassword())
-                .authorities("ROLE_" + user.getRole().name())
+                .authorities(authorities)
                 .accountExpired(false)
                 .accountLocked(user.getStatus() == User.Status.INACTIVE)
                 .credentialsExpired(false)
@@ -113,11 +108,6 @@ public class UserService implements UserDetailsService {
         user.setRole(userDto.getRole() != null ? userDto.getRole() : User.Role.USER);
         user.setStatus(userDto.getStatus() != null ? userDto.getStatus() : User.Status.ACTIVE);
         user.setAvatarUrl(userDto.getAvatarUrl());
-        if(userDto.isMfaEnabled()){
-            String secret = gAuth.createCredentials().getKey();
-            user.setMfaSecret(secret);
-            user.setMfaEnabled(true);
-        }
         user.setMfaConfigured(false);
         User savedUser = userRepository.save(user);
 
@@ -151,12 +141,7 @@ public class UserService implements UserDetailsService {
         {
             user.setMfaEnabled(false);
             user.setMfaSecret("");
-        } else if(!user.isMfaEnabled() && userDto.isMfaEnabled()) {
-            String secret = gAuth.createCredentials().getKey();
-            user.setMfaSecret(secret);
-            user.setMfaConfigured(false);
         }
-
         if (password != null && !password.isBlank())
         {
             user.setPassword(passwordEncoder.encode(password));
@@ -211,11 +196,15 @@ public class UserService implements UserDetailsService {
     }
 
     public long getAdminCount() {
-        return userRepository.countAdmins();
+        return userRepository.countByRoleIn(java.util.List.of(User.Role.ADMIN, User.Role.SUPER_ADMIN));
+    }
+
+    public long getSuperAdminCount() {
+        return userRepository.countByRole(User.Role.SUPER_ADMIN);
     }
 
     public long getActiveUserCount() {
-        return userRepository.countActiveUsers();
+        return userRepository.countByStatus(User.Status.ACTIVE);
     }
     public void changePassword(Long id,String avatarUrl, String currentPassword, String newPassword) {
         User user = userRepository.findById(id)

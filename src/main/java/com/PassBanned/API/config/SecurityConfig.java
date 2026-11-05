@@ -43,40 +43,28 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain filterChain(
-            HttpSecurity http,
-            JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
-
-        http
-                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+    public SecurityFilterChain filterChain(HttpSecurity http, JwtAuthenticationFilter jwtAuthenticationFilter) throws Exception {
+        http.cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
-                .sessionManagement(session ->
-                        session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                )
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auths -> auths
-                        // Autoriser les requêtes préliminaires CORS
-                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/h2-console/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
-                        .requestMatchers("/uploads/**").permitAll()
-                        .requestMatchers("/users/**").hasRole("ADMIN")
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/audit-logs/**").hasRole("ADMIN")
-                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/activity-logs/**").hasRole("ADMIN")
+                        .requestMatchers("/users/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/audit-logs/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/activity-logs/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .requestMatchers("/audit-logs/**").authenticated()
                         .requestMatchers("/passengers/**").authenticated()
                         .anyRequest().authenticated()
                 )
-                .headers(headers ->
-                        headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::deny)
-                )
-                .addFilterBefore(
-                        jwtAuthenticationFilter,
-                        UsernamePasswordAuthenticationFilter.class
-                );
+                .headers(headers -> headers
+                        .frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
+
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {

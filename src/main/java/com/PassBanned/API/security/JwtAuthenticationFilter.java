@@ -86,6 +86,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private void processFlyAskyAuthentication(String jwt, HttpServletRequest request) {
         try {
             FlyAskyClaims claims = flyAskyAuthService.parseAndVerifyJwt(jwt);
+
             // Rechercher l'utilisateur dans la base locale (par son sub FlyAsky ou email)
             Optional<User> localUserOpt = Optional.empty();
             if (claims.getSub() != null) {
@@ -94,32 +95,47 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (localUserOpt.isEmpty() && claims.getEmail() != null) {
                 localUserOpt = userRepository.findByEmail(claims.getEmail().toLowerCase());
             }
+
             if (localUserOpt.isEmpty()) {
                 logger.warn("JWT FlyAsky valide mais aucun utilisateur local correspondant: sub={}, email={}",
                         claims.getSub(), claims.getEmail());
                 return;
             }
+
             User localUser = localUserOpt.get();
+
             // Vérifier que le compte local est actif
             if (localUser.getStatus() != User.Status.ACTIVE) {
                 logger.warn("Compte local inactif pour l'utilisateur FlyAsky: {}", localUser.getEmail());
                 return;
             }
+
             // Vérifier la liste de révocation et la fenêtre d'inactivité de 20 minutes
             String jti = claims.getSid() != null ? claims.getSid() : claims.getSub();
             Date expDate = claims.getExpiration();
             Date issDate = claims.getIssuedAt();
+
             if (sessionRevocationService.isRevoked(jwt, jti, issDate, localUser.getEmail())) {
                 logger.warn("Accès refusé: token FlyAsky révoqué pour {}", localUser.getEmail());
                 return;
             }
+
             if (sessionRevocationService.checkAndUpdateInactivity(jti, jwt, issDate, localUser.getEmail(), expDate)) {
                 logger.warn("Accès refusé: session FlyAsky révoquée suite à inactivité pour {}", localUser.getEmail());
                 return;
             }
-            // CRITIQUE : Seul le rôle de l'utilisateur dans la base locale est utilisé
-            String localRoleAuthority = "ROLE_" + localUser.getRole().name();
-            List<SimpleGrantedAuthority> authorities = List.of(new SimpleGrantedAuthority(localRoleAuthority));
+
+            // CRITIQUE : Rôle(s) de l'utilisateur dans la base locale
+            // Un SUPER_ADMIN possède ROLE_SUPER_ADMIN et ROLE_ADMIN (voit tout ce qu'un admin voit)
+            List<SimpleGrantedAuthority> authorities;
+            if (localUser.getRole() == User.Role.SUPER_ADMIN) {
+                authorities = List.of(
+                    new SimpleGrantedAuthority("ROLE_SUPER_ADMIN"),
+                    new SimpleGrantedAuthority("ROLE_ADMIN")
+                );
+            } else {
+                authorities = List.of(new SimpleGrantedAuthority("ROLE_" + localUser.getRole().name()));
+            }
 
             UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                     localUser.getEmail(),
@@ -129,7 +145,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
-            logger.debug("Authentification FlyAsky validée avec rôle local {} pour {}", localRoleAuthority, localUser.getEmail());
+            logger.debug("Authentification FlyAsky validée avec rôle local {} pour {}",'v', localUser.getEmail());
 
         } catch (SecurityException se) {
             logger.error("ALERTE SÉCURITÉ: Requête rejetée car l'authenticité du JWT FlyAsky a échoué (JWKS): {}", se.getMessage());
@@ -153,10 +169,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             logger.warn("Accès refusé: token révoqué pour " + username);
             return;
         }
+
         if (sessionRevocationService.checkAndUpdateInactivity(jti, jwt, issuedAt, username, expiryDate)) {
             logger.warn("Accès refusé: session révoquée suite à 15 minutes d'inactivité pour " + username);
             return;
         }
+
         UserDetails userDetails = userService.loadUserByUsername(username);
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                 userDetails,

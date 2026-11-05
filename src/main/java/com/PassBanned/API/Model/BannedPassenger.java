@@ -52,6 +52,13 @@ public class BannedPassenger {
     @Column(name = "passport_number", nullable = false, unique = true)
     private String passportNumber;
 
+    @Column(name = "passport_expiry_date")
+    private LocalDate passportExpiryDate;
+
+    @Size(max = 100)
+    @Column(name = "passport_issuing_country")
+    private String passportIssuingCountry;
+
     @NotBlank
     @Size(max = 50)
     @Column(nullable = false)

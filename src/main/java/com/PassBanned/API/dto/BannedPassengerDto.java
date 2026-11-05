@@ -31,6 +31,11 @@ public class BannedPassengerDto {
     @Size(max = 20)
     private String passportNumber;
     
+    private LocalDate passportExpiryDate;
+
+    @Size(max = 100)
+    private String passportIssuingCountry;
+
     @NotBlank
     @Size(max = 50)
     private String nationality;
@@ -77,6 +82,12 @@ public class BannedPassengerDto {
 
     public String getPassportNumber() { return passportNumber; }
     public void setPassportNumber(String passportNumber) { this.passportNumber = passportNumber; }
+
+    public LocalDate getPassportExpiryDate() { return passportExpiryDate; }
+    public void setPassportExpiryDate(LocalDate passportExpiryDate) { this.passportExpiryDate = passportExpiryDate; }
+
+    public String getPassportIssuingCountry() { return passportIssuingCountry; }
+    public void setPassportIssuingCountry(String passportIssuingCountry) { this.passportIssuingCountry = passportIssuingCountry; }
 
     public String getNationality() { return nationality; }
     public void setNationality(String nationality) { this.nationality = nationality; }

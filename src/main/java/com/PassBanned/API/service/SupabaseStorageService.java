@@ -1,10 +1,9 @@
 package com.PassBanned.API.service;
 
-import com.PassBanned.API.config.SupabaseConfig;
+import com.PassBanned.API.config.FilebaseConfig;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.reactive.function.BodyInserters;
@@ -18,7 +17,7 @@ import java.util.UUID;
 public class SupabaseStorageService {
 
     @Autowired
-    private SupabaseConfig supabaseConfig;
+    private FilebaseConfig supabaseConfig;
 
     @Autowired
     private WebClient supabaseWebClient;

@@ -8,7 +8,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 @Getter
 @Configuration
-public class SupabaseConfig {
+public class FilebaseConfig {
 
     @Value("${supabase.url}")
     private String supabaseUrl;

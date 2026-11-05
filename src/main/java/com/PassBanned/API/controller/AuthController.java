@@ -31,12 +31,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Contrôleur d'authentification à deux facteurs intégrant FlyAsky :
- * 1. Premier facteur : identifiants de la base locale (e-mail + mot de passe)
- * 2. Deuxième facteur : API FlyAsky (OTP par e-mail, session, JWT 10 min)
- * 3. Contrôle des accès métier : exclusivement basé sur le rôle de la base locale.
- */
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
@@ -69,18 +63,30 @@ public class AuthController {
     @Autowired
     private FlyAskyAuthService flyAskyAuthService;
 
-    /**
-     * ÉTAPE 1 : Connexion locale (Premier facteur)
-     * Le backend vérifie l'email et le mot de passe dans la base locale existante.
-     * Si OK, création d'un challenge temporaire et déclenchement de l'envoi de l'OTP FlyAsky.
-     * Aucun accès métier n'est encore accordé.
-     */
     @PostMapping("/login")
     public ResponseEntity<LoginResponse> authenticateUser(
             @Valid @RequestBody AuthRequest authRequest,
             HttpServletRequest request) {
-        String cleanEmail = authRequest.getEmail() != null ? authRequest.getEmail().trim() : "";
+        String cleanEmail = authRequest.getEmail() != null ? authRequest.getEmail().trim().toLowerCase() : "";
         try {
+            Optional<User> existingUserOpt = userRepository.findByEmail(cleanEmail);
+            if (existingUserOpt.isPresent() && existingUserOpt.get().getStatus() != User.Status.ACTIVE) {
+                try {
+                    auditLogService.record(
+                            "LOGIN_BLOCKED_INACTIVE",
+                            "AUTHENTICATION",
+                            "Tentative de connexion sur un compte désactivé: " + cleanEmail,
+                            cleanEmail,
+                            "Portail de connexion",
+                            "WARNING",
+                            request.getRemoteAddr(),
+                            "Compte désactivé"
+                    );
+                } catch (Exception ignored) {}
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(createLoginErrorResponse("Your account is blocked. Please contact the administrator."));
+            }
+
             // 1. Validation des identifiants dans la base locale existante
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(
@@ -90,11 +96,11 @@ public class AuthController {
             );
 
             User localUser = userRepository.findByEmail(cleanEmail)
-                    .orElseThrow(() -> new RuntimeException("Utilisateur introuvable"));
+                    .orElseThrow(() -> new RuntimeException("User not found"));
 
             if (localUser.getStatus() != User.Status.ACTIVE) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(createLoginErrorResponse("Compte utilisateur inactif ou désactivé."));
+                        .body(createLoginErrorResponse("Your account is blocked. Please contact the administrator"));
             }
 
             // 2. Création d'un challenge temporaire (Étape 2)
@@ -104,16 +110,16 @@ public class AuthController {
             try {
                 flyAskyAuthService.sendVerificationOtp(localUser.getEmail());
             } catch (IllegalArgumentException iae) {
-                logger.warn("Refus envoi OTP FlyAsky pour {}: {}", localUser.getEmail(), iae.getMessage());
+                logger.warn("OTP sending refused for {}: {}", localUser.getEmail(), iae.getMessage());
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                        .body(createLoginErrorResponse("Échec de l'envoi OTP FlyAsky : " + iae.getMessage()));
+                        .body(createLoginErrorResponse("Failed to send OTP  : " + iae.getMessage()));
             } catch (Exception e) {
                 logger.error("Erreur passerelle FlyAsky lors de l'envoi de l'OTP pour {}", localUser.getEmail(), e);
                 return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                         .body(createLoginErrorResponse("Erreur passerelle FlyAsky lors de l'envoi de l'OTP : " + e.getMessage()));
             }
 
-            String otpMessage = "Un code OTP a été envoyé à votre adresse e-mail " + localUser.getEmail();
+            String otpMessage = "An OTP code has been sent to your email address" + localUser.getEmail();
 
             LoginResponse response = new LoginResponse();
             response.setSuccess(true);
@@ -126,7 +132,16 @@ public class AuthController {
             logger.info("Étape 1 validée pour {}. Challenge 2FA créé: {}", localUser.getEmail(), challenge.getChallengeId());
             return ResponseEntity.ok(response);
 
+        } catch (org.springframework.security.authentication.DisabledException | org.springframework.security.authentication.LockedException de) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(createLoginErrorResponse("Votre compte est désactivé. Veuillez contacter l'administrateur."));
         } catch (Exception e) {
+            // Vérifier si la raison de l'échec est un compte désactivé
+            Optional<User> checkInactive = userRepository.findByEmail(cleanEmail);
+            if (checkInactive.isPresent() && checkInactive.get().getStatus() != User.Status.ACTIVE) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body(createLoginErrorResponse("Votre compte est désactivé. Veuillez contacter l'administrateur."));
+            }
             try {
                 auditLogService.record(
                         "LOGIN_FAILED",
@@ -208,7 +223,7 @@ public class AuthController {
 
             if (localUser.getStatus() != User.Status.ACTIVE) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(createErrorResponse("Compte utilisateur inactif."));
+                        .body(createErrorResponse("Votre compte est désactivé. Veuillez contacter l'administrateur."));
             }
 
             // Sauvegarder l'identifiant FlyAsky (sub) dans l'utilisateur local si pas encore fait
