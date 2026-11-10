@@ -107,6 +107,28 @@ public class BannedPassengerService {
         return convertToDto(updatedPassenger);
     }
 
+    public BannedPassengerDto updatePassengerByPassport(String passportNumber, BannedPassengerDto passengerDto) {
+        BannedPassenger passenger = passengerRepository.findByPassportNumber(passportNumber)
+                .orElseThrow(() -> new RuntimeException("Passenger not found"));
+        updateEntityFromDto(passenger, passengerDto);
+        BannedPassenger updatedPassenger = passengerRepository.save(passenger);
+
+        try {
+            auditLogService.record(
+                "PASSENGER_UPDATED",
+                "PASSENGERS",
+                "Mise à jour du passager interdit: " + updatedPassenger.getFirstName() + " " + updatedPassenger.getLastName() + " (Passeport: " + updatedPassenger.getPassportNumber() + ")",
+                null,
+                "Passenger passport: " + passportNumber,
+                "SUCCESS",
+                null,
+                "Statut: " + updatedPassenger.getStatus() + ", Gravité: " + updatedPassenger.getSeverity()
+            );
+        } catch (Exception ignored) {}
+
+        return convertToDto(updatedPassenger);
+    }
+
     public void deletePassenger(Long id) {
         BannedPassenger passenger = passengerRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Passenger not found"));
@@ -119,6 +141,25 @@ public class BannedPassengerService {
                 "Suppression de la fiche d'interdiction: " + passenger.getFirstName() + " " + passenger.getLastName() + " (Passeport: " + passenger.getPassportNumber() + ")",
                 null,
                 "Passenger #" + id,
+                "WARNING",
+                null,
+                "Passeport: " + passenger.getPassportNumber()
+            );
+        } catch (Exception ignored) {}
+    }
+
+    public void deletePassengerByPassport(String passportNumber) {
+        BannedPassenger passenger = passengerRepository.findByPassportNumber(passportNumber)
+                .orElseThrow(() -> new RuntimeException("Passenger not found"));
+        passengerRepository.delete(passenger);
+
+        try {
+            auditLogService.record(
+                "PASSENGER_DELETED",
+                "PASSENGERS",
+                "Suppression de la fiche d'interdiction: " + passenger.getFirstName() + " " + passenger.getLastName() + " (Passeport: " + passenger.getPassportNumber() + ")",
+                null,
+                "Passenger passport: " + passportNumber,
                 "WARNING",
                 null,
                 "Passeport: " + passenger.getPassportNumber()

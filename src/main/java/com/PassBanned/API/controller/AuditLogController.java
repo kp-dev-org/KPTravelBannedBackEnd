@@ -40,7 +40,6 @@ public class AuditLogController {
 
         Sort sort = sortDir.equalsIgnoreCase("asc") ? Sort.by(sortBy).ascending() : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
-
         Page<AuditLog> result = auditLogService.searchLogs(query, category, status, startDate, endDate, pageable);
         return ResponseEntity.ok(result);
     }

@@ -12,19 +12,12 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Service de gestion des challenges temporaires d'authentification.
- * Assure l'étape 2 du flux: mémorise le compte local ayant réussi le premier facteur,
- * dans l'attente de la validation du code OTP FlyAsky (second facteur).
- */
+
 @Service
 public class ChallengeService {
-
     // Durée de validité du challenge (10 minutes)
     private static final Duration CHALLENGE_TTL = Duration.ofMinutes(10);
-
     private final Map<String, AuthChallenge> challenges = new ConcurrentHashMap<>();
-
     /**
      * Crée un challenge temporaire pour un utilisateur local ayant passé le premier facteur.
      */

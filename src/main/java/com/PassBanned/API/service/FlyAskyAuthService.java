@@ -27,35 +27,19 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Service client pour l'API d'authentification officielle FlyAsky (auth-v1).
- * Conforme aux directives du document d'intégration :
- *
- * 1. POST /email-otp/send-verification-otp : Demande du code OTP à 6 chiffres (valable 5 min)
- * 2. POST /sign-in/email-otp : Connexion avec OTP -> renvoie le jeton de SESSION (set-auth-token)
- * 3. GET /token : Échange session -> JWT d'accès métier (valable 10 min) via Authorization: Bearer <session>
- * 4. GET /get-session : Consultation de la session courante
- * 5. GET /jwks : Clés publiques pour vérifier l'authenticité cryptographique du JWT
- * 6. POST /sign-out : Révocation et destruction de la session
- */
 @Service
 public class FlyAskyAuthService {
 
     private static final Logger logger = LoggerFactory.getLogger(FlyAskyAuthService.class);
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
-
     @Value("${flyasky.auth.base-url:https://backend.flyasky.com/auth/v1/api/auth}")
     private String baseUrl;
-
     @Value("${flyasky.auth.jwks-url:https://backend.flyasky.com/auth/v1/api/auth/jwks}")
     private String jwksUrl;
-
     @Value("${flyasky.auth.issuer:https://backend.flyasky.com}")
     private String expectedIssuer;
-
     @Value("${flyasky.auth.audience:api-gateway}")
     private String expectedAudience;
-
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
 
@@ -74,21 +58,14 @@ public class FlyAskyAuthService {
         this.objectMapper = new ObjectMapper();
     }
 
-    /**
-     * 1. Demander un code OTP par e-mail
-     * POST /email-otp/send-verification-otp
-     * Corps: {"email":"prenom.nom@flyasky.com","type":"sign-in"}
-     * Réponse: {"success":true} (valable 5 minutes)
-     */
+
     public boolean sendVerificationOtp(String email) throws IOException {
         String cleanEmail = email.trim().toLowerCase();
-
         // Règle d'accès FlyAsky : Seules les adresses @flyasky.com reçoivent un code
         if (!cleanEmail.endsWith("@flyasky.com")) {
             logger.warn("Adresse hors domaine @flyasky.com : {}", cleanEmail);
             throw new IllegalArgumentException("Seules les adresses e-mail @flyasky.com sont acceptées par le portail FlyAsky.");
         }
-
         String url = baseUrl + "/email-otp/send-verification-otp";
         String payload = objectMapper.writeValueAsString(new OtpRequest(cleanEmail, "sign-in"));
 
@@ -110,12 +87,6 @@ public class FlyAskyAuthService {
         }
     }
 
-    /**
-     * 2. Se connecter avec le code OTP
-     * POST /sign-in/email-otp
-     * Corps: {"email":"…","otp":"123456"}
-     * Réponse: Jeton de SESSION dans l'en-tête set-auth-token ou cookie auth-session.session_token
-     */
     public String signInWithEmailOtp(String email, String otp) throws IOException {
         String cleanEmail = email.trim().toLowerCase();
         String cleanOtp = otp.trim();
@@ -170,15 +141,6 @@ public class FlyAskyAuthService {
         }
     }
 
-    /**
-     * 3. Échanger le jeton de SESSION contre le JWT métier (valable 10 minutes)
-     * GET /token
-     * En-tête: Authorization: Bearer <jeton de session>
-     * Réponse: {"token":"<jwt>"}
-     *
-     * À chaque fois qu'on veut renouveler le token lorsqu'une session est ouverte,
-     * on effectue cet appel GET /token, puis on valide son authenticité via JWKS.
-     */
     public String exchangeSessionForJwt(String sessionToken) throws IOException {
         String url = baseUrl + "/token";
 
@@ -214,15 +176,6 @@ public class FlyAskyAuthService {
             JsonNode user
     ) {}
 
-    /**
-     * 4. Session courante (Consultation de session uniquement)
-     * GET /get-session
-     * En-tête: Authorization: Bearer <jeton de session> ou cookie
-     * Réponse: session et utilisateur
-     *
-     * Note: GET /get-session permet de consulter la session et l'utilisateur.
-     * Pour obtenir le token ou le renouveler, on fait TOUJOURS GET /token.
-     */
     public FlyAskySessionConsultation getSession(String sessionToken) throws IOException {
         String url = baseUrl + "/get-session";
 
@@ -250,11 +203,6 @@ public class FlyAskyAuthService {
         }
     }
 
-    /**
-     * 5. Clés publiques JWKS pour vérifier l'authenticité du JWT
-     * GET /jwks
-     * Réponse: {"keys":[{"kid":...,"kty":...,"x":...}]}
-     */
     public JWKSet fetchJwks() throws IOException {
         long now = System.currentTimeMillis();
         if (cachedJwkSet != null && (now - jwkSetLastFetched) < JWKS_CACHE_TTL_MS) {
@@ -288,10 +236,6 @@ public class FlyAskyAuthService {
         }
     }
 
-    /**
-     * Vérifie la signature cryptographique du JWT avec le JWKS de FlyAsky.
-     * Si la signature ou l'authenticité échoue, le système REJETTE immédiatement le token (SecurityException).
-     */
     public boolean verifyJwtSignatureWithJwks(String jwtToken) {
         if (jwtToken == null || jwtToken.isBlank()) {
             throw new SecurityException("Authenticité rejetée : Token JWT FlyAsky manquant.");
@@ -361,12 +305,6 @@ public class FlyAskyAuthService {
         return null;
     }
 
-    /**
-     * 6. Se déconnecter (Révocation de la session)
-     * POST /sign-out
-     * En-tête: Authorization: Bearer <jeton de session>
-     * Réponse: session détruite ; ses JWT sont refusés par le gateway
-     */
     public void signOut(String sessionToken) {
         if (sessionToken == null || sessionToken.isBlank()) return;
         try {
@@ -383,11 +321,6 @@ public class FlyAskyAuthService {
         }
     }
 
-    /**
-     * Décode et valide la charge utile d'un JWT FlyAsky.
-     * Claims (§3 du document) :
-     * sub, email, email_verified, role, sid, iss, aud, iat, exp
-     */
     public FlyAskyClaims parseClaims(String jwtToken, boolean verifyExpiration) {
         if (jwtToken == null || jwtToken.isBlank()) {
             throw new IllegalArgumentException("JWT FlyAsky manquant.");
@@ -448,7 +381,6 @@ public class FlyAskyAuthService {
     public FlyAskyClaims extractClaimsIgnoreExpiration(String jwtToken) {
         return parseClaims(jwtToken, false);
     }
-
     private record OtpRequest(String email, String type) {}
     private record SignInOtpRequest(String email, String otp) {}
 }

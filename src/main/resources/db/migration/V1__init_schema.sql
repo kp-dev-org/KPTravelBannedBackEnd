@@ -1,7 +1,3 @@
--- =========================================================================
--- V1__init_schema.sql - Migration Flyway initiale PassBanned (PostgreSQL)
--- Protège la base contre l'écrasement à chaque redéploiement
--- =========================================================================
 
 -- 1. Table des utilisateurs du système (agents et administrateurs)
 CREATE TABLE IF NOT EXISTS users (

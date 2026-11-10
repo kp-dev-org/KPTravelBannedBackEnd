@@ -7,18 +7,6 @@ import lombok.NoArgsConstructor;
 
 import java.util.Date;
 
-/**
- * Claims extraits du JWT officiel émis par FlyAsky (durée 10 minutes).
- *
- * sub : identifiant de l'utilisateur (la clé à associer dans vos tables)
- * email : adresse e-mail
- * email_verified : statut vérifié
- * role : rôle sur le gateway (non utilisé pour les autorisations métier)
- * sid : identifiant de session
- * iss : https://backend.flyasky.com
- * aud : api-gateway
- * exp : date d'expiration (10 minutes)
- */
 @Data
 @Builder
 @NoArgsConstructor

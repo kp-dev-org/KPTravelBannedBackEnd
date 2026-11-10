@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 
 public class BannedPassengerDto {
     private Long id;
-    
+
     @NotBlank
     @Size(max = 50)
     private String firstName;
@@ -23,7 +23,15 @@ public class BannedPassengerDto {
     @Email
     @Size(max = 100)
     private String email;
-    
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
     @Size(max = 20)
     private String phone;
     
@@ -65,8 +73,7 @@ public class BannedPassengerDto {
     public BannedPassengerDto() {}
 
     // Getters and Setters
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
+
 
     public String getFirstName() { return firstName; }
     public void setFirstName(String firstName) { this.firstName = firstName; }

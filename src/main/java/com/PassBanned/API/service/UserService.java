@@ -165,6 +165,41 @@ public class UserService implements UserDetailsService {
         return convertToDto(updatedUser);
     }
 
+    public UserDto updateUserByEmail(String email, UserDto userDto, String password) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        user.setName(userDto.getName());
+        user.setRole(userDto.getRole());
+        user.setStatus(userDto.getStatus());
+        user.setAvatarUrl(userDto.getAvatarUrl());
+        user.setMfaEnabled(userDto.isMfaEnabled());
+        if(user.isMfaEnabled() && !userDto.isMfaEnabled()) {
+            user.setMfaEnabled(false);
+            user.setMfaSecret("");
+        }
+        if (password != null && !password.isBlank()) {
+            user.setPassword(passwordEncoder.encode(password));
+        }
+
+        User updatedUser = userRepository.save(user);
+
+        try {
+            auditLogService.record(
+                "USER_UPDATED",
+                "USERS",
+                "Modification du compte utilisateur: " + updatedUser.getName() + " (" + updatedUser.getEmail() + ")",
+                null,
+                "User email: " + email,
+                "SUCCESS",
+                null,
+                "Rôle: " + updatedUser.getRole() + ", Statut: " + updatedUser.getStatus()
+            );
+        } catch (Exception ignored) {}
+
+        return convertToDto(updatedUser);
+    }
+
     public void deleteUser(Long id) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
@@ -182,6 +217,85 @@ public class UserService implements UserDetailsService {
                 "Rôle: " + user.getRole()
             );
         } catch (Exception ignored) {}
+    }
+
+    public void deleteUserByEmail(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        userRepository.delete(user);
+
+        try {
+            auditLogService.record(
+                "USER_DELETED",
+                "USERS",
+                "Suppression du compte utilisateur: " + user.getName() + " (" + user.getEmail() + ")",
+                null,
+                "User email: " + email,
+                "WARNING",
+                null,
+                "Rôle: " + user.getRole()
+            );
+        } catch (Exception ignored) {}
+    }
+
+    public void updateProfileByEmail(String email, String name, String avatarUrl, String currentPassword, String newPassword) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (name != null && !name.isBlank()) {
+            user.setName(name.trim());
+        }
+        if (avatarUrl != null) {
+            user.setAvatarUrl(avatarUrl);
+        }
+
+        if (newPassword != null && !newPassword.isBlank()) {
+            if (currentPassword == null || !passwordEncoder.matches(currentPassword, user.getPassword())) {
+                throw new RuntimeException("Current password is incorrect");
+            }
+            user.setPassword(passwordEncoder.encode(newPassword));
+        }
+
+        userRepository.save(user);
+
+        try {
+            auditLogService.record(
+                "USER_PROFILE_UPDATED",
+                "USERS",
+                "Mise à jour du profil par l'utilisateur: " + user.getName() + " (" + user.getEmail() + ")",
+                null,
+                "User email: " + email,
+                "SUCCESS",
+                null,
+                "Nom mis à jour: " + user.getName()
+            );
+        } catch (Exception ignored) {}
+    }
+
+    public String enableMfaByEmail(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        user.setMfaEnabled(true);
+        user.setMfaConfigured(true);
+        userRepository.save(user);
+        return "ok";
+    }
+
+    public void disableMfaByEmail(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        user.setMfaEnabled(false);
+        user.setMfaConfigured(false);
+        user.setMfaSecret(null);
+        userRepository.save(user);
+    }
+
+    public void resetMfaByEmail(String email) {
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        user.setMfaConfigured(false);
+        user.setMfaSecret(null);
+        userRepository.save(user);
     }
 
     public void updateLastLogin(String email) {
@@ -206,18 +320,40 @@ public class UserService implements UserDetailsService {
     public long getActiveUserCount() {
         return userRepository.countByStatus(User.Status.ACTIVE);
     }
-    public void changePassword(Long id,String avatarUrl, String currentPassword, String newPassword) {
+    public void updateProfile(Long id, String name, String avatarUrl, String currentPassword, String newPassword) {
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
-            throw new RuntimeException("Current password is incorrect");
+        if (name != null && !name.isBlank()) {
+            user.setName(name.trim());
+        }
+        if (avatarUrl != null) {
+            user.setAvatarUrl(avatarUrl);
         }
 
-        user.setPassword(passwordEncoder.encode(newPassword));
-        user.setAvatarUrl(avatarUrl);
+        if (newPassword != null && !newPassword.isBlank()) {
+            if (currentPassword == null || !passwordEncoder.matches(currentPassword, user.getPassword())) {
+                throw new RuntimeException("Current password is incorrect");
+            }
+            user.setPassword(passwordEncoder.encode(newPassword));
+        }
+
         userRepository.save(user);
+
+        try {
+            auditLogService.record(
+                "USER_PROFILE_UPDATED",
+                "USERS",
+                "Mise à jour du profil par l'utilisateur: " + user.getName() + " (" + user.getEmail() + ")",
+                null,
+                "User #" + id,
+                "SUCCESS",
+                null,
+                "Nom mis à jour: " + user.getName()
+            );
+        } catch (Exception ignored) {}
     }
+
 
     private UserDto convertToDto(User user) {
         UserDto dto = new UserDto();

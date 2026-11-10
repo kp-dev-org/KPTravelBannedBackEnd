@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 @ToString
 public class UserDto {
     // Getters and Setters
+
     private Long id;
 
     @NotBlank

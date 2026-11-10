@@ -24,7 +24,6 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(apiError, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
-
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<ApiError> handleRuntimeExceptions(RuntimeException ex, HttpServletRequest request) {
         ApiError apiError = new ApiError(

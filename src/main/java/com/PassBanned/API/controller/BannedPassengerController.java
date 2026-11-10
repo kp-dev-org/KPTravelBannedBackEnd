@@ -86,10 +86,32 @@ public class BannedPassengerController {
         }
     }
 
+    @PutMapping("/passport/{passportNumber}")
+    public ResponseEntity<BannedPassengerDto> updatePassengerByPassport(
+            @PathVariable String passportNumber, 
+            @Valid @RequestBody BannedPassengerDto passengerDto) {
+        try {
+            BannedPassengerDto updatedPassenger = passengerService.updatePassengerByPassport(passportNumber, passengerDto);
+            return ResponseEntity.ok(updatedPassenger);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deletePassenger(@PathVariable Long id) {
         try {
             passengerService.deletePassenger(id);
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    @DeleteMapping("/passport/{passportNumber}")
+    public ResponseEntity<?> deletePassengerByPassport(@PathVariable String passportNumber) {
+        try {
+            passengerService.deletePassengerByPassport(passportNumber);
             return ResponseEntity.ok().build();
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();

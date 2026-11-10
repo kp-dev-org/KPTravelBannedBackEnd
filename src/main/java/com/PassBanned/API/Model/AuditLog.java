@@ -23,10 +23,10 @@ public class AuditLog {
     private Long id;
 
     @Column(nullable = false, length = 100)
-    private String action; // e.g. PASSENGER_CREATED, PASSENGER_DELETED, USER_LOGIN, MANIFEST_CHECK
+    private String action;
 
     @Column(length = 50)
-    private String category; // e.g. PASSENGERS, USERS, AUTH, SCREENING, SYSTEM
+    private String category;
 
     @Column(nullable = false, length = 500)
     private String description;

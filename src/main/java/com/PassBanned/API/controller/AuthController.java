@@ -41,25 +41,18 @@ public class AuthController {
 
     @Autowired
     private AuthenticationManager authenticationManager;
-
     @Autowired
     private UserRepository userRepository;
-
     @Autowired
     private UserService userService;
-
     @Autowired
     private JwtTokenProvider tokenProvider;
-
     @Autowired
     private SessionRevocationService sessionRevocationService;
-
     @Autowired
     private AuditLogService auditLogService;
-
     @Autowired
     private ChallengeService challengeService;
-
     @Autowired
     private FlyAskyAuthService flyAskyAuthService;
 
@@ -86,8 +79,6 @@ public class AuthController {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
                         .body(createLoginErrorResponse("Your account is blocked. Please contact the administrator."));
             }
-
-            // 1. Validation des identifiants dans la base locale existante
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(
                             cleanEmail,
@@ -103,10 +94,7 @@ public class AuthController {
                         .body(createLoginErrorResponse("Your account is blocked. Please contact the administrator"));
             }
 
-            // 2. Création d'un challenge temporaire (Étape 2)
             AuthChallenge challenge = challengeService.createChallenge(localUser);
-
-            // 3. Déclenchement de l'envoi du code OTP FlyAsky (valable 5 minutes)
             try {
                 flyAskyAuthService.sendVerificationOtp(localUser.getEmail());
             } catch (IllegalArgumentException iae) {
@@ -158,38 +146,27 @@ public class AuthController {
         }
     }
 
-    /**
-     * ÉTAPE 2 & 3 : Validation du code OTP & Gestion de la session par FlyAsky
-     * - Connexion avec le code OTP auprès de FlyAsky (POST /sign-in/email-otp) -> sessionToken
-     * - Échange session -> JWT d'accès métier (GET /token) -> flyAskyJwt (10 min)
-     * - Liaison de l'identité FlyAsky avec le compte local
-     * - Retourne le JWT FlyAsky au front pour conservation stricte en mémoire
-     */
     @PostMapping("/flyasky/verify")
     public ResponseEntity<AuthResponse> verifyFlyAskyOtp(
             @Valid @RequestBody FlyAskyVerifyRequest verifyRequest,
             HttpServletRequest request,
             HttpServletResponse response) {
         try {
-            // 1. Vérification du challenge temporaire
             AuthChallenge challenge = challengeService.getValidChallenge(verifyRequest.getChallengeId())
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Challenge expiré ou invalide. Veuillez recommencer la connexion."));
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Challenge expired or invalid. Please restart the login process."));
 
             if (!StringUtils.hasText(verifyRequest.getOtp())) {
-                return ResponseEntity.badRequest().body(createErrorResponse("Le code OTP FlyAsky est obligatoire."));
+                return ResponseEntity.badRequest().body(createErrorResponse("OTP code is mandatory."));
             }
 
             String sessionToken;
             try {
-                // 1. Validation de l'OTP auprès de FlyAsky -> Obtention du jeton de session
                 sessionToken = flyAskyAuthService.signInWithEmailOtp(challenge.getEmail(), verifyRequest.getOtp().trim());
             } catch (Exception ex) {
-                logger.warn("Code OTP rejeté par FlyAsky pour {}: {}", challenge.getEmail(), ex.getMessage());
-                return ResponseEntity.badRequest().body(createErrorResponse("Code OTP FlyAsky invalide ou expiré : " + ex.getMessage()));
+                logger.warn("OTP code rejected for {}: {}", challenge.getEmail(), ex.getMessage());
+                return ResponseEntity.badRequest().body(createErrorResponse("OTP code invalid or expired : " + ex.getMessage()));
             }
 
-            // 2. Obtenir le JWT via GET /token ET vérification cryptographique immédiate par JWKS
-            // (Pour avoir le token ou le renouveler, on fait TOUJOURS /token)
             String flyAskyJwt;
             try {
                 flyAskyJwt = flyAskyAuthService.exchangeSessionForJwt(sessionToken);
@@ -223,7 +200,7 @@ public class AuthController {
 
             if (localUser.getStatus() != User.Status.ACTIVE) {
                 return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                        .body(createErrorResponse("Votre compte est désactivé. Veuillez contacter l'administrateur."));
+                        .body(createErrorResponse("Your account is disabled. Please contact the administrator."));
             }
 
             // Sauvegarder l'identifiant FlyAsky (sub) dans l'utilisateur local si pas encore fait
@@ -234,23 +211,15 @@ public class AuthController {
 
             challengeService.consumeChallenge(challenge.getChallengeId());
             userService.updateLastLogin(localUser.getEmail());
-
-            // 4. Injecter les cookies HttpOnly sécurisés :
-            // - authCookie : JWT FlyAsky (10 min)
-            // - sessionCookie : jeton de session auth-session.session_token pour les échanges FlyAsky
             long maxAgeSeconds = 10 * 60; // 10 minutes selon la spécification FlyAsky
             ResponseCookie authCookie = createAuthCookie(flyAskyJwt, request, maxAgeSeconds);
             response.addHeader(HttpHeaders.SET_COOKIE, authCookie.toString());
-
             ResponseCookie sessionCookie = createSessionCookie(sessionToken, request, 7 * 24 * 3600);
             response.addHeader(HttpHeaders.SET_COOKIE, sessionCookie.toString());
-
             String jti = claims.getSid() != null ? claims.getSid() : claims.getSub();
             if (jti != null) {
                 sessionRevocationService.registerSessionActivity(jti, localUser.getEmail());
             }
-
-            // Audit log
             try {
                 auditLogService.record(
                         "USER_LOGIN_FLYASKY_2FA",
@@ -259,39 +228,30 @@ public class AuthController {
                         localUser.getEmail(),
                         "Session",
                         "SUCCESS",
-                        null,
+                        request.getRemoteAddr(),
                         "Rôle local appliqué: " + localUser.getRole().name() + " | Sub FlyAsky: " + claims.getSub()
                 );
             } catch (Exception ignored) {}
-
-            // 5. Réponse : SEUL LE RÔLE DE L'UTILISATEUR DANS LA BASE LOCALE EST RETOURNÉ
             UserDto userDto = new UserDto(localUser);
             AuthResponse authResponse = new AuthResponse();
             authResponse.setSuccess(true);
             authResponse.setMessage("Authentification réussie via la session FlyAsky.");
             authResponse.setUser(userDto);
-            authResponse.setToken(flyAskyJwt);              // JWT FlyAsky (10 min) en mémoire
-            authResponse.setSessionToken(sessionToken);      // Jeton de session FlyAsky
-
             return ResponseEntity.ok(authResponse);
 
         } catch (ResponseStatusException rse) {
             return ResponseEntity.status(rse.getStatusCode()).body(createErrorResponse(rse.getReason()));
         } catch (Exception ex) {
             logger.error("Erreur lors de la vérification FlyAsky", ex);
-            return ResponseEntity.badRequest().body(createErrorResponse("Échec de la validation: " + ex.getMessage()));
+            return ResponseEntity.badRequest().body(createErrorResponse("Validation failed: " + ex.getMessage()));
         }
     }
 
-    /**
-     * Renvoyer un nouveau code OTP FlyAsky
-     */
     @PostMapping("/flyasky/resend-otp")
     public ResponseEntity<?> resendFlyAskyOtp(@RequestBody Map<String, String> body) {
         String challengeId = body.get("challengeId");
         AuthChallenge challenge = challengeService.getValidChallenge(challengeId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Challenge introuvable ou expiré."));
-
         try {
             flyAskyAuthService.sendVerificationOtp(challenge.getEmail());
             return ResponseEntity.ok(Map.of("success", true, "message", "Nouveau code OTP envoyé à " + challenge.getEmail()));
@@ -306,11 +266,6 @@ public class AuthController {
         }
     }
 
-    /**
-     * Renouvellement du JWT FlyAsky (Cycle du JWT - §5 du document).
-     * Quand le JWT expire dans moins d'une minute ou sur 401, le front sollicite ce point de terminaison.
-     * Le renouvellement s'effectue TOUJOURS via GET /token auprès de FlyAsky (GET /get-session servant uniquement à consulter la session).
-     */
     @RequestMapping(value = {"/flyasky/refresh-token", "/flyasky/token"}, method = {RequestMethod.POST, RequestMethod.GET})
     public ResponseEntity<?> refreshFlyAskyJwt(
             @RequestBody(required = false) Map<String, String> body,
@@ -323,7 +278,6 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "Jeton de session FlyAsky introuvable. Veuillez vous reconnecter."));
         }
-
         try {
             // Renouvellement du token : on effectue TOUJOURS GET /token auprès de FlyAsky
             String newJwt = flyAskyAuthService.exchangeSessionForJwt(sessionToken);
@@ -344,7 +298,6 @@ public class AuthController {
 
             // Mettre à jour l'horodatage d'activité
             sessionRevocationService.registerSessionActivity(jti, claims.getEmail());
-
             long maxAgeSeconds = 10 * 60;
             ResponseCookie authCookie = createAuthCookie(newJwt, request, maxAgeSeconds);
             response.addHeader(HttpHeaders.SET_COOKIE, authCookie.toString());
@@ -362,9 +315,6 @@ public class AuthController {
         }
     }
 
-    /**
-     * Invalidation immédiate sur inactivité de 20 minutes (destruction des cookies côté serveur).
-     */
     @PostMapping("/expire-session")
     public ResponseEntity<?> expireSession(
             @RequestBody(required = false) Map<String, String> body,
@@ -398,9 +348,6 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("message", "Session expirée pour inactivité et invalidée"));
     }
 
-    /**
-     * Consultation directe de la session courante FlyAsky (GET /get-session permet juste de consulter la session).
-     */
     @GetMapping("/flyasky/session")
     public ResponseEntity<?> getFlyAskyCurrentSession(
             HttpServletRequest request) {
@@ -420,9 +367,6 @@ public class AuthController {
         }
     }
 
-    /**
-     * Déconnexion (POST /sign-out sur FlyAsky, destruction de la session et révocation)
-     */
     @PostMapping("/logout")
     public ResponseEntity<?> logout(
             @RequestBody(required = false) Map<String, String> body,
@@ -449,9 +393,6 @@ public class AuthController {
         return ResponseEntity.ok(Map.of("message", "Déconnexion et fermeture de la session FlyAsky réussies"));
     }
 
-    /**
-     * Récupérer les informations de l'utilisateur connecté avec son rôle local.
-     */
     @GetMapping("/me")
     public ResponseEntity<?> getCurrentUser(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
@@ -549,11 +490,7 @@ public class AuthController {
                 .path("/")
                 .maxAge(maxAgeSeconds);
 
-        if (isSecure) {
-            builder.secure(true).sameSite("None");
-        } else {
-            builder.secure(false).sameSite("Lax");
-        }
+        if (isSecure) {builder.secure(true).sameSite("None");} else {builder.secure(false).sameSite("Lax");}
 
         return builder.build();
     }

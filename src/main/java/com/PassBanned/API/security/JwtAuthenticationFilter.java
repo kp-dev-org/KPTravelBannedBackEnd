@@ -42,16 +42,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Autowired
     private JwtTokenProvider tokenProvider;
-
     @Autowired
     private UserService userService;
-
     @Autowired
     private UserRepository userRepository;
-
     @Autowired
     private SessionRevocationService sessionRevocationService;
-
     @Autowired
     private FlyAskyAuthService flyAskyAuthService;
 
@@ -60,7 +56,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         try {
             String token = getJwtFromRequest(request);
-
             if (StringUtils.hasText(token)) {
                 // CAS 1 : Jeton JWT FlyAsky (validité 10 minutes)
                 if (isFlyAskyJwt(token)) {
@@ -77,16 +72,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    /**
-     * Traite un JWT émis par FlyAsky :
-     * - Vérifie l'expiration, l'émetteur et l'audience
-     * - Retrouve le compte local par sub FlyAsky ou email
-     * - APPLIQUE EXCLUSIVEMENT LE RÔLE DE LA BASE LOCALE
-     */
     private void processFlyAskyAuthentication(String jwt, HttpServletRequest request) {
         try {
             FlyAskyClaims claims = flyAskyAuthService.parseAndVerifyJwt(jwt);
-
             // Rechercher l'utilisateur dans la base locale (par son sub FlyAsky ou email)
             Optional<User> localUserOpt = Optional.empty();
             if (claims.getSub() != null) {
@@ -95,15 +83,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (localUserOpt.isEmpty() && claims.getEmail() != null) {
                 localUserOpt = userRepository.findByEmail(claims.getEmail().toLowerCase());
             }
-
             if (localUserOpt.isEmpty()) {
                 logger.warn("JWT FlyAsky valide mais aucun utilisateur local correspondant: sub={}, email={}",
                         claims.getSub(), claims.getEmail());
                 return;
             }
-
             User localUser = localUserOpt.get();
-
             // Vérifier que le compte local est actif
             if (localUser.getStatus() != User.Status.ACTIVE) {
                 logger.warn("Compte local inactif pour l'utilisateur FlyAsky: {}", localUser.getEmail());
@@ -119,13 +104,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 logger.warn("Accès refusé: token FlyAsky révoqué pour {}", localUser.getEmail());
                 return;
             }
-
             if (sessionRevocationService.checkAndUpdateInactivity(jti, jwt, issDate, localUser.getEmail(), expDate)) {
                 logger.warn("Accès refusé: session FlyAsky révoquée suite à inactivité pour {}", localUser.getEmail());
                 return;
             }
-
-            // CRITIQUE : Rôle(s) de l'utilisateur dans la base locale
             // Un SUPER_ADMIN possède ROLE_SUPER_ADMIN et ROLE_ADMIN (voit tout ce qu'un admin voit)
             List<SimpleGrantedAuthority> authorities;
             if (localUser.getRole() == User.Role.SUPER_ADMIN) {
@@ -197,7 +179,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private String getJwtFromRequest(HttpServletRequest request) {
-        // 1. Extraction prioritaire depuis l'en-tête Authorization: Bearer <token>
         String bearerToken = request.getHeader("Authorization");
         if (StringUtils.hasText(bearerToken) && bearerToken.startsWith("Bearer ")) {
             return bearerToken.substring(7);

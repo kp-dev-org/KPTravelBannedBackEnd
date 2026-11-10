@@ -13,7 +13,6 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 public final class IpAddressUtil {
 
     private IpAddressUtil() {
-        // Constructeur privé pour classe utilitaire
     }
 
     private static final String[] IP_HEADER_CANDIDATES = {
@@ -76,7 +75,6 @@ public final class IpAddressUtil {
         if ("0:0:0:0:0:0:0:1".equals(remoteAddr) || "::1".equals(remoteAddr)) {
             return "127.0.0.1";
         }
-
         return (remoteAddr != null && !remoteAddr.isBlank()) ? remoteAddr : "127.0.0.1";
     }
 }

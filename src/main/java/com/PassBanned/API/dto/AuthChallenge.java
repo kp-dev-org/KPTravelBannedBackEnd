@@ -8,11 +8,6 @@ import lombok.NoArgsConstructor;
 
 import java.time.Instant;
 
-/**
- * Challenge temporaire créé après validation réussie des identifiants locaux (Étape 1).
- * Mémorise quel compte local a réussi le premier facteur d'authentification.
- * Aucun accès aux APIs métier n'est autorisé à ce stade.
- */
 @Data
 @Builder
 @NoArgsConstructor

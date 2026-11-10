@@ -19,7 +19,7 @@ public class ActivityLogController {
     private AuditLogService auditLogService;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN','SUPER_ADMIN')")
     public ResponseEntity<List<AuditLog>> getActivityLogs() {
         return ResponseEntity.ok(auditLogService.getRecentLogs());
     }
